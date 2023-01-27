@@ -11,10 +11,10 @@ Containing CMUMOSI, CMUMOSEI and IEMOCAP datasets
 Each dataset has the CMU-SDK version and Multimodal-Transformer version (with different input dimensionalities)
 
 "#Model training"
+1. Set up the configurations in config/run.ini
 
-1.Set up the configurations in config/run.ini
 
-2.python run.py -config config/run.ini
+2. python run.py -config config/run.ini
 
 "#Research"
 
