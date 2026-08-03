@@ -224,7 +224,7 @@ flowchart TD
 | --- | --- |
 | 基础模型 | `mlp`、`ef-lstm`、`lf-lstm`、`tfn`、`lmf` |
 | 记忆/循环模型 | `mfn`、`graph-mfn`、`marn`、`rmfn`、`lsthm` |
-| Transformer/融合模型 | `multimodal-transformer`、`cfn`、`raven` |
+| Transformer/融合模型 | `multimodal-transformer`、`cfn`、`raven`、`almt`、`m3sa`、`megakans` |
 | 量子启发式模型 | `qdnn`、`qdnn-ablation`、`qdnnattention`、`quantum-multimodal-transformer`、`local_mixture` |
 | 注意力与消融变体 | `local_mixture_attention`、`local_mixture_attention_T`、`local_mixture_attention_A`、`local_mixture_attention_V`、`local_mixture_attention_TV`、`local_mixture_attention_TA`、`local_mixture_attention_VA` |
 

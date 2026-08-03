@@ -24,6 +24,9 @@ from .LocalMixtureNN_attetnion_V import LocalMixtureNN_attention_V
 from .LocalMixtureNN_attetnion_TV import LocalMixtureNN_attention_TV
 from .LocalMixtureNN_attetnion_TA import LocalMixtureNN_attention_TA
 from .LocalMixtureNN_attetnion_VA import LocalMixtureNN_attention_VA
+from .MEGAKANs import MEGAKANs
+from .M3SA import M3SA
+from .ALMT import ALMT
 def setup(opt):
     
     print("network type: " + opt.network_type)
@@ -77,6 +80,12 @@ def setup(opt):
         model = LocalMixtureNN_attention_TA(opt)
     elif opt.network_type == 'local_mixture_attention_VA':
         model = LocalMixtureNN_attention_VA(opt)
+    elif opt.network_type == 'megakans':
+        model = MEGAKANs(opt)
+    elif opt.network_type == 'm3sa':
+        model = M3SA(opt)
+    elif opt.network_type == 'almt':
+        model = ALMT(opt)
 
     else:
         raise Exception("model not supported: {}".format(opt.network_type))

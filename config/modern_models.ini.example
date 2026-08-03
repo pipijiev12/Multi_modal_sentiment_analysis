@@ -1,0 +1,28 @@
+# Copy one model block into the [COMMON] section of your run configuration.
+# All settings below are optional; these are the defaults used by the models.
+
+[ALMT]
+network_type = almt
+almt_dim = 128
+almt_token_len = 8
+almt_heads = 8
+almt_depth = 3
+almt_dropout = 0.1
+
+[M3SA]
+network_type = m3sa
+m3sa_dim = 128
+m3sa_heads = 4
+m3sa_layers = 2
+m3sa_dropout = 0.1
+m3sa_aux_weight = 1.0
+m3sa_filter_scale = 10.0
+m3sa_filter_penalty = 0.01
+
+[MEGAKANS]
+network_type = megakans
+megakan_dim = 96
+megakan_heads = 4
+megakan_dropout = 0.1
+megakan_grid_size = 8
+megakan_fusion_dim = 192

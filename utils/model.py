@@ -84,6 +84,10 @@ def train(params, model):
                     outputs = outputs.reshape_as(b_targets)
 
                 loss = get_loss(params, criterion, outputs, b_targets)
+                # M3SA optimizes its unimodal encoders with the paper's
+                # cross-modal modulation loss in addition to the main loss.
+                if hasattr(model, 'auxiliary_loss'):
+                    loss = loss + model.auxiliary_loss(b_targets)
                 loss.backward()
                 nn.utils.clip_grad_norm_(model.parameters(), params.clip)
                 optimizer.step()
