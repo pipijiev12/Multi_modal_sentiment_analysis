@@ -98,7 +98,10 @@ class SinusoidalPositionalEmbedding(nn.Module):
             )
         self.weights = self.weights.type_as(self._float_tensor)
         positions = make_positions(input, self.padding_idx, self.left_pad)
-        return self.weights.index_select(0, positions.view(-1)).view(bsz, seq_len, -1).detach()
+        # ``positions`` is produced from an expanded tensor and can be
+        # non-contiguous on modern PyTorch versions. ``reshape`` handles both
+        # contiguous and strided layouts safely.
+        return self.weights.index_select(0, positions.reshape(-1)).reshape(bsz, seq_len, -1).detach()
 
     def max_positions(self):
         """Maximum number of supported positions."""

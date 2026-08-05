@@ -27,6 +27,8 @@ from .LocalMixtureNN_attetnion_VA import LocalMixtureNN_attention_VA
 from .MEGAKANs import MEGAKANs
 from .M3SA import M3SA
 from .ALMT import ALMT
+from .QMF import QMF
+from .QRSAN import QRSAN
 def setup(opt):
     
     print("network type: " + opt.network_type)
@@ -56,6 +58,8 @@ def setup(opt):
         model = uQDNN(opt)
     elif opt.network_type == 'local_mixture':
         model = LocalMixtureNN(opt)
+    elif opt.network_type == 'qmf':
+        model = QMF(opt)
     elif opt.network_type == 'multimodal-transformer':
         model = MULT(opt)
     elif opt.network_type == 'cfn':
@@ -64,6 +68,8 @@ def setup(opt):
         model = RAVEN(opt)
     elif opt.network_type == 'qdnnattention':
         model = uQDNN_ATTENTION(opt)
+    elif opt.network_type == 'qrsan':
+        model = QRSAN(opt)
     elif opt.network_type == 'quantum-multimodal-transformer':
         model = uMULT(opt)
     elif opt.network_type == 'local_mixture_attention':

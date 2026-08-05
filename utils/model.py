@@ -37,6 +37,7 @@ def cmumosei_round(a):
     return res
 
 def train(params, model):
+    os.makedirs('tmp', exist_ok=True)
     criterion = get_criterion(params)
     if hasattr(model,'get_params'):
         unitary_params, remaining_params = model.get_params()
@@ -51,12 +52,29 @@ def train(params, model):
     # optimizer = torch.optim.RMSprop(remaining_params,lr = params.lr)
     optimizer = torch.optim.RMSprop(remaining_params,lr = params.lr)
 
-    # Temp file for storing the best model 
-    temp_file_name = str(int(np.random.rand()*int(time.time())))
-    params.best_model_file = os.path.join('tmp',temp_file_name)
+    # Persist both the latest optimizer/model state and the best validation
+    # model. This allows long dataset/model matrices to resume at epoch
+    # boundaries after an interrupted process.
+    training_checkpoint_file = getattr(
+        params, 'training_checkpoint_file', params.output_file + '.training.pt'
+    )
+    checkpoint_dir = os.path.dirname(training_checkpoint_file)
+    if checkpoint_dir:
+        os.makedirs(checkpoint_dir, exist_ok=True)
+    params.training_checkpoint_file = training_checkpoint_file
+    params.best_model_file = training_checkpoint_file + '.best'
 
+    start_epoch = 0
     best_val_loss = 99999.0
-    for i in range(params.epochs):
+    if os.path.exists(training_checkpoint_file):
+        checkpoint = torch.load(training_checkpoint_file, weights_only=False)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        start_epoch = int(checkpoint['epoch']) + 1
+        best_val_loss = float(checkpoint['best_val_loss'])
+        print('Resuming at epoch {} from {}'.format(start_epoch, training_checkpoint_file))
+
+    for i in range(start_epoch, params.epochs):
         print('epoch: ', i)
         model.train()
         with tqdm(total = params.train_sample_num) as pbar:
@@ -133,6 +151,13 @@ def train(params, model):
             print('The best model up till now. Saved to File.')
             best_val_loss = val_loss
 
+        torch.save({
+            'epoch': i,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'best_val_loss': float(best_val_loss),
+        }, training_checkpoint_file)
+
 def get_criterion(params):
     # Only 1-dim output, regression loss is used
     # For monologue sentiment regression
@@ -176,6 +201,12 @@ def test(model,params):
 
     all_performances = evaluate(params, all_outputs, all_targets)
     print(all_performances)
+    # IEMOCAP is a four-emotion classification task. The reports below are
+    # sentiment-regression diagnostics and cannot be applied to its 4 x 2
+    # one-hot targets.
+    if params.label == 'emotion':
+        return performances
+
     del_all_outputs = []
     for i in all_outputs:
         del_all_outputs.append([cmumosei_round(i)])
@@ -211,6 +242,7 @@ def test(model,params):
 
     return performances
 
+@torch.no_grad()
 def get_predictions(model, params, split ='dev'):
     outputs = []
     targets = []
@@ -304,7 +336,8 @@ def save_performance(params, performance_dict):
                     'network' : params.network_type,
                     'model_dir_name': params.dir_name}
     output_dic.update(performance_dict)
-    df = df.append(output_dic, ignore_index = True)
+    # DataFrame.append was removed in pandas 2.0.
+    df = pd.concat([df, pd.DataFrame([output_dic])], ignore_index=True)
 
     if not 'output_file' in params.__dict__:
         params.output_file = 'eval/{}_{}.csv'.format(params.dataset_name, params.network_type)

@@ -81,7 +81,9 @@ class MultiheadAttention(nn.Module):
             q = self.in_proj_q(query)
             k = self.in_proj_k(key)
             v = self.in_proj_v(value)
-        q *= self.scaling
+        # q can be one of the views returned by ``chunk``. Modern autograd
+        # forbids modifying such multi-view outputs in place.
+        q = q * self.scaling
 
         if self.bias_k is not None:
             assert self.bias_v is not None

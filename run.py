@@ -13,7 +13,10 @@ from utils.params import Params
 
 def run(params):   
     model = None
-    if 'load_model_from_dir' in params.__dict__ and params.load_model_from_dir:
+    if 'resume_model_file' in params.__dict__ and params.resume_model_file:
+        print('Resuming training from checkpoint: {}'.format(params.resume_model_file))
+        model = torch.load(params.resume_model_file, weights_only=False).to(params.device)
+    elif 'load_model_from_dir' in params.__dict__ and params.load_model_from_dir:
         print('Loading the model from an existing dir!')
         model_params = pickle.load(open(os.path.join(params.dir_name,'config.pkl'),'rb'))
         if 'lookup_table' in params.__dict__:
@@ -29,8 +32,11 @@ def run(params):
     if not ('fine_tune' in params.__dict__ and params.fine_tune == False):
         print('Training the model!')
         train(params, model)
-        model = torch.load(params.best_model_file)
+        model = torch.load(params.best_model_file, weights_only=False)
         os.remove(params.best_model_file)
+        if ('training_checkpoint_file' in params.__dict__ and
+                os.path.exists(params.training_checkpoint_file)):
+            os.remove(params.training_checkpoint_file)
     
     performance_dict = test(model, params)
     # performance_str = print_performance(performance_dict, params)

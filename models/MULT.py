@@ -166,8 +166,6 @@ class MULT(nn.Module):
         # print(self.projs)
         proj_x = [ x if self.input_dims[i] == self.contracted_dim else self.projs[i](x) for i,x in enumerate(in_modalities)]
         proj_x = [x.permute(2,0,1) for x in proj_x]
-        print('proj_x',np.shape(proj_x))
-        print('proj_x',np.shape(proj_x[0]))
 #        proj_x_l = x_l if self.orig_d_l == self.d_l else self.proj_l(x_l)
 #        proj_x_a = x_a if self.orig_d_a == self.d_a else self.proj_a(x_a)
 #        proj_x_v = x_v if self.orig_d_v == self.d_v else self.proj_v(x_v)
@@ -186,7 +184,6 @@ class MULT(nn.Module):
             if type(hs) == tuple:
                 hs = hs[0]
             all_hs.append(hs[-1])
-        print('all_hs',np.shape(all_hs[0]))
                 
 #        if self.lonly:
 #            # (V,A) --> L

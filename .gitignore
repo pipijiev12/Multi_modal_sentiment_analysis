@@ -1,6 +1,10 @@
 *.pyc
 config/*
 !config/modern_models.ini.example
+!config/reproduction/
+!config/reproduction/*.ini
+!config/matrix/
+!config/matrix/**/*.ini
 tmp/*
 .spyproject/*
 __pyche__/*
