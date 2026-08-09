@@ -59,6 +59,9 @@ def make_config(
         common["seed"] = str(seed)
     common["dir_name"] = f"{run_name}/{dataset}/{model}"
     common["output_file"] = f"eval/{run_name}/{dataset}/{model}.csv"
+    # Keep test-set raw outputs and targets so class-level metrics (Figure 4)
+    # can be reproduced exactly after all repeated runs have finished.
+    common["prediction_file"] = f"eval/{run_name}/{dataset}/{model}.predictions.npz"
     target_dir = config_dir / dataset
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / f"{model}.ini"

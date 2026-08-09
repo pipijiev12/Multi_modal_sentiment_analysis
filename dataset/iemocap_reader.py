@@ -37,8 +37,9 @@ class IEMOCAPReader(object):
                 
         self.input_dims = [x.shape[-1] for i,x in enumerate(X_train) if (i in self.feature_indexes)]
           
-        if self.embedding_enabled:
-            self.input_dims[0] = self.embedding.embedding_size
+        if self.embedding_enabled and 0 in self.feature_indexes:
+            text_position = self.feature_indexes.index(0)
+            self.input_dims[text_position] = self.embedding.embedding_size
             
         self.opt_callback(opt)
         
@@ -151,10 +152,6 @@ class IEMOCAPReader(object):
         x = self.datas[split]['X']
         y = self.datas[split]['y']
         feature_indexes = [_ind for _ind in self.feature_indexes]
-        
-        # Always include textual modality 
-        if 0 not in feature_indexes:
-            feature_indexes = [0]+feature_indexes
         
         x = [_x for i,_x in enumerate(x) if i in feature_indexes]
         

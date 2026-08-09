@@ -28,7 +28,7 @@ from .MEGAKANs import MEGAKANs
 from .M3SA import M3SA
 from .ALMT import ALMT
 from .QMF import QMF
-from .QRSAN import QRSAN
+from .QRSAN import QRSAN, QRSANNoResidual, QSAN
 def setup(opt):
     
     print("network type: " + opt.network_type)
@@ -70,6 +70,10 @@ def setup(opt):
         model = uQDNN_ATTENTION(opt)
     elif opt.network_type == 'qrsan':
         model = QRSAN(opt)
+    elif opt.network_type == 'qsan':
+        model = QSAN(opt)
+    elif opt.network_type == 'qrsan-no-residual':
+        model = QRSANNoResidual(opt)
     elif opt.network_type == 'quantum-multimodal-transformer':
         model = uMULT(opt)
     elif opt.network_type == 'local_mixture_attention':

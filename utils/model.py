@@ -189,6 +189,17 @@ def test(model,params):
     dev_output,dev_target= get_predictions(model, params, split = 'dev')
     test_output,test_target= get_predictions(model, params, split = 'test')
 
+    prediction_file = getattr(params, 'prediction_file', None)
+    if prediction_file:
+        prediction_dir = os.path.dirname(prediction_file)
+        if prediction_dir:
+            os.makedirs(prediction_dir, exist_ok=True)
+        np.savez_compressed(
+            prediction_file,
+            outputs=test_output.detach().cpu().numpy(),
+            targets=test_target.detach().cpu().numpy(),
+        )
+
     all_outputs = torch.cat([train_output,dev_output,test_output])
     all_targets = torch.cat([train_target,dev_target,test_target])
     # print('all_outputs\n',all_outputs)
@@ -335,6 +346,9 @@ def save_performance(params, performance_dict):
                     'modality' : params.features,
                     'network' : params.network_type,
                     'model_dir_name': params.dir_name}
+    for key in ('experiment_figure', 'variant', 'run_id', 'seed'):
+        if hasattr(params, key):
+            output_dic[key] = getattr(params, key)
     output_dic.update(performance_dict)
     # DataFrame.append was removed in pandas 2.0.
     df = pd.concat([df, pd.DataFrame([output_dic])], ignore_index=True)

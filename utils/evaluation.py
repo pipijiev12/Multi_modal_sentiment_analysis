@@ -4,7 +4,7 @@ import torch
 from sklearn.metrics import classification_report
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import precision_recall_fscore_support
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, recall_score
 import numpy as np
 
 def evaluate(params, outputs, targets):
@@ -20,6 +20,7 @@ def evaluate(params, outputs, targets):
         outputs_np = outputs.detach().cpu().numpy()
         targets_np = targets.detach().cpu().numpy()
         f1 = f1_score((targets_np>=0),(outputs_np>=0),average='weighted')
+        recall = recall_score((targets_np>=0),(outputs_np>=0),average='weighted')
             
         # Correlation
         corr = np.corrcoef(outputs_np.transpose(), targets_np.transpose())[0][1]    
@@ -37,7 +38,7 @@ def evaluate(params, outputs, targets):
         n_correct = sum(np.round(targets_clamped)==np.round(outputs_clamped))[0]
         acc_5 = n_correct/n_total
 
-        performance_dict = {'acc':acc_2,'binary_f1':f1,'accuracy_5':acc_5,'accuracy_7':acc_7,'MAE':mae,'r':corr }
+        performance_dict = {'acc':acc_2,'binary_f1':f1,'recall':recall,'accuracy_5':acc_5,'accuracy_7':acc_7,'MAE':mae,'r':corr }
         
     else:
 #        emos = ["Neutral", "Happy", "Sad", "Angry"]

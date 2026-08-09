@@ -118,6 +118,24 @@ class uQDNN_ATTENTION(torch.nn.Module):
         else:
             self.contracted_dims = [int(s) for s in opt.contracted_dims.split(',')]
 
+        if len(self.subnet_dropout_rates) == 1:
+            self.subnet_dropout_rates *= len(self.input_dims)
+        else:
+            self.subnet_dropout_rates = self.subnet_dropout_rates[:len(self.input_dims)]
+        if len(self.subnet_dropout_rates) != len(self.input_dims):
+            raise ValueError("subnet_dropout_rates must provide one value per selected modality")
+
+        if len(self.contracted_dims) == 1:
+            self.contracted_dims *= len(self.input_dims)
+        else:
+            self.contracted_dims = self.contracted_dims[:len(self.input_dims)]
+        if len(self.contracted_dims) != len(self.input_dims):
+            raise ValueError("contracted_dims must provide one value per selected modality")
+
+        # Figure 6 ablation: retain the attention path, but optionally remove
+        # its Q residual connection before quantum measurement.
+        self.residual_self_attention = getattr(opt, 'residual_self_attention', True)
+
         self.modality_weights = nn.Parameter(torch.zeros(len(self.input_dims)))
 
         # Only textual input, QDNN performed for word pivots
@@ -184,7 +202,15 @@ class uQDNN_ATTENTION(torch.nn.Module):
         batch_size = in_modalities[0].shape[0]
         seq_len = in_modalities[0].shape[1]
 
-        word_indexes = in_modalities[0]
+        if 0 in self.feature_indexes:
+            text_position = self.feature_indexes.index(0)
+            word_indexes = in_modalities[text_position]
+        else:
+            # Visual/audio-only settings have no token ids. A fixed phase index
+            # keeps their learned quantum phase independent of textual input.
+            word_indexes = torch.zeros(
+                batch_size, seq_len, dtype=torch.long, device=self.device
+            )
 
         weights = []
 
@@ -264,8 +290,9 @@ class uQDNN_ATTENTION(torch.nn.Module):
         atten_real_tensors = torch.bmm(atten_real,V_tensors_real) - torch.bmm(atten_imag,V_tensors_imag)
         atten_imag_tensors = torch.bmm(atten_imag,V_tensors_real) + torch.bmm(atten_real,V_tensors_imag)
 
-        atten_real_tensors += Q_tensors_real
-        atten_imag_tensors += Q_tensors_imag
+        if self.residual_self_attention:
+            atten_real_tensors += Q_tensors_real
+            atten_imag_tensors += Q_tensors_imag
 
         output = self.measurement([atten_real_tensors,atten_imag_tensors,weight])
         output = self.fc_out(output)
