@@ -53,7 +53,12 @@ class ComplexMeasurement2(torch.nn.Module):
             projection_real = torch.matmul(input_real, r_k) + torch.matmul(input_imag, i_k)
             projection_imag = torch.matmul(input_imag, r_k) - torch.matmul(input_real, i_k)
 #            result = torch.matmul(weights.transpose(1,2), mul_real+mul_imag).squeeze()
-            if self.score_mapping == 'born':
+            # Full-module checkpoints written before the score-mapping
+            # ablation do not contain this newly introduced attribute.  They
+            # represent the original Born-rule implementation, so retain that
+            # behavior when such a checkpoint is resumed or evaluated.
+            score_mapping = getattr(self, 'score_mapping', 'born')
+            if score_mapping == 'born':
                 scores = projection_real.square() + projection_imag.square()
             else:
                 scores = self.score_mapper(torch.cat([projection_real, projection_imag], dim=-1))
