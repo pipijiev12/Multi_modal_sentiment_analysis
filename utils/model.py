@@ -66,6 +66,7 @@ def train(params, model):
 
     start_epoch = 0
     best_val_loss = 99999.0
+    params.training_epoch_seconds = []
     if os.path.exists(training_checkpoint_file) and not os.path.exists(params.best_model_file):
         # A checkpoint can survive an interrupted run after the final epoch
         # while its separately serialized validation-best model is absent.
@@ -85,6 +86,7 @@ def train(params, model):
         print('Resuming at epoch {} from {}'.format(start_epoch, training_checkpoint_file))
 
     for i in range(start_epoch, params.epochs):
+        epoch_started = time.perf_counter()
         print('epoch: ', i)
         model.train()
         with tqdm(total = params.train_sample_num) as pbar:
@@ -168,6 +170,7 @@ def train(params, model):
             'optimizer_state_dict': optimizer.state_dict(),
             'best_val_loss': float(best_val_loss),
         }, training_checkpoint_file)
+        params.training_epoch_seconds.append(float(time.perf_counter() - epoch_started))
 
 def get_criterion(params):
     # Only 1-dim output, regression loss is used
@@ -286,7 +289,18 @@ def get_predictions(model, params, split ='dev'):
         data_t = data[-1].to(params.device)
         # print(data_x)
         # print(type(data_x))
+        if params.device.type == 'cuda':
+            torch.cuda.synchronize(params.device)
+        inference_started = time.perf_counter()
         data_o = model(data_x)
+        if params.device.type == 'cuda':
+            torch.cuda.synchronize(params.device)
+        profile = getattr(params, 'inference_profile', {})
+        split_profile = profile.setdefault(split, {'forward_seconds': 0.0, 'batches': 0, 'examples': 0})
+        split_profile['forward_seconds'] += float(time.perf_counter() - inference_started)
+        split_profile['batches'] += 1
+        split_profile['examples'] += int(data_t.shape[0])
+        params.inference_profile = profile
         outputs.append(data_o.detach())
         targets.append(data_t.detach())
             

@@ -5,11 +5,66 @@ import models
 import argparse
 import pandas as pd
 import pickle
+import json
+import platform
+import sys
+import time
 from dataset import setup 
 from utils.model import train,test,save_model,save_performance,print_performance
 from utils.io import parse_grid_parameters
 from utils.generic import set_seed
 from utils.params import Params
+
+
+def write_reproducibility_metadata(params, model, train_seconds, test_seconds):
+    """Persist run-time evidence required for reproducibility reporting."""
+    output_file = getattr(params, 'output_file', '')
+    if not output_file:
+        return
+    output_dir = os.path.dirname(output_file)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    device = params.device
+    gpu = None
+    peak_gpu_mib = None
+    if device.type == 'cuda':
+        gpu = {
+            'index': int(device.index if device.index is not None else torch.cuda.current_device()),
+            'name': torch.cuda.get_device_name(device),
+            'cuda_runtime': torch.version.cuda,
+        }
+        peak_gpu_mib = float(torch.cuda.max_memory_allocated(device) / 2**20)
+    test_profile = getattr(params, 'inference_profile', {}).get('test', {})
+    batches = int(test_profile.get('batches', 0))
+    examples = int(test_profile.get('examples', 0))
+    forward_seconds = float(test_profile.get('forward_seconds', 0.0))
+    metadata = {
+        'config_file': str(getattr(params, 'config_file', '')),
+        'dataset': params.dataset_name,
+        'network_type': params.network_type,
+        'seed': getattr(params, 'seed', None),
+        'hyperparameters': {key: str(value) for key, value in params.__dict__.items()
+                            if key not in {'reader', 'lookup_table', 'device', 'inference_profile', 'training_epoch_seconds'}},
+        'parameters_total': int(sum(parameter.numel() for parameter in model.parameters())),
+        'parameters_trainable': int(sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)),
+        'training_wall_seconds': float(train_seconds),
+        'training_epoch_seconds': list(getattr(params, 'training_epoch_seconds', [])),
+        'training_mean_epoch_seconds': float(sum(getattr(params, 'training_epoch_seconds', [])) / max(1, len(getattr(params, 'training_epoch_seconds', [])))),
+        'test_evaluation_wall_seconds': float(test_seconds),
+        'test_inference_batches': batches,
+        'test_inference_examples': examples,
+        'test_inference_forward_seconds': forward_seconds,
+        'test_inference_batch_ms': 1000 * forward_seconds / batches if batches else None,
+        'test_inference_example_ms': 1000 * forward_seconds / examples if examples else None,
+        'peak_gpu_memory_mib': peak_gpu_mib,
+        'hardware': {'cpu': platform.processor() or platform.uname().processor, 'gpu': gpu},
+        'software': {'python': sys.version, 'pytorch': torch.__version__, 'platform': platform.platform()},
+    }
+    metadata_path = os.path.join(output_dir, 'reproducibility.json')
+    with open(metadata_path, 'w', encoding='utf-8') as stream:
+        json.dump(metadata, stream, ensure_ascii=False, indent=2)
+        stream.write('\n')
+    print('REPRODUCIBILITY_METADATA ' + json.dumps(metadata, ensure_ascii=False, sort_keys=True))
 
 def run(params):   
     model = None
@@ -29,6 +84,10 @@ def run(params):
     else:
         model = models.setup(params).to(params.device)
       
+    if params.device.type == 'cuda':
+        torch.cuda.reset_peak_memory_stats(params.device)
+    params.inference_profile = {}
+    train_started = time.perf_counter()
     if not ('fine_tune' in params.__dict__ and params.fine_tune == False):
         print('Training the model!')
         train(params, model)
@@ -42,8 +101,10 @@ def run(params):
         if ('training_checkpoint_file' in params.__dict__ and
                 os.path.exists(params.training_checkpoint_file)):
             os.remove(params.training_checkpoint_file)
-    
+    train_seconds = time.perf_counter() - train_started
+    test_started = time.perf_counter()
     performance_dict = test(model, params)
+    write_reproducibility_metadata(params, model, train_seconds, time.perf_counter() - test_started)
     # performance_str = print_performance(performance_dict, params)
     # save_model(model,params,performance_str)
   
