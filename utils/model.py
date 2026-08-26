@@ -87,8 +87,9 @@ def train(params, model):
 #                 print(np.shape(data[1]))
 #                 print(np.shape(data[2]))
 #                 print(np.shape(data[3]))
-                if np.shape(data[0])[0] != params.batch_size:
-                    continue
+                # Keep the final incomplete batch.  Dropping it makes the
+                # training set depend on batch size and previously caused the
+                # final 29 IEMOCAP training examples to be skipped each epoch.
                 b_inputs = [inp.to(params.device) for inp in data[:-1]]
                 b_targets = data[-1].to(params.device)
                 
@@ -126,7 +127,7 @@ def train(params, model):
                 train_acc = n_correct/n_total 
 
                 #Update Progress Bar
-                pbar.update(params.batch_size)
+                pbar.update(len(data[0]))
                 ordered_dict={'acc': train_acc, 'loss':loss.item()}        
                 pbar.set_postfix(ordered_dict=ordered_dict)
         
@@ -208,7 +209,14 @@ def test(model,params):
     if params.label == 'emotion': 
         test_output = test_output.reshape_as(test_target)
         all_outputs = all_outputs.reshape_as(all_targets)
-    performances = evaluate(params,test_output,test_target)
+    # The majority-class reference is selected from every training label, then
+    # evaluated on the same (full-batch) test examples as the model.  Do not
+    # use ``train_target`` here because get_predictions intentionally omits an
+    # incomplete final batch.
+    performances = evaluate(
+        params, test_output, test_target,
+        baseline_reference_targets=params.reader.datas['train']['y'],
+    )
 
     all_performances = evaluate(params, all_outputs, all_targets)
     print(all_performances)
@@ -262,8 +270,8 @@ def get_predictions(model, params, split ='dev'):
     for _ii,data in enumerate(iterator,0):
         # print('data',np.shape(data))
         # print('data',np.shape(data[0]))
-        if np.shape(data[0])[0] != params.batch_size:
-            continue
+        # Evaluate every split instance, including the final incomplete batch.
+        # This must match the dataset-level sample counts reported in tables.
         data_x = [inp.to(params.device) for inp in data[:-1]]
         data_t = data[-1].to(params.device)
         # print(data_x)

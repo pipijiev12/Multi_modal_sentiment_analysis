@@ -7,10 +7,21 @@ import numpy as np
 from layers.complexnn.measurement import ComplexMeasurement
 
 class ComplexMeasurement2(torch.nn.Module):
-    def __init__(self, embed_dim, units=5, ortho_init=False, device = torch.device('cpu')):
+    def __init__(self, embed_dim, units=5, ortho_init=False, device=torch.device('cpu'), score_mapping='born', score_hidden=8):
         super(ComplexMeasurement2, self).__init__()
         self.units = units
         self.embed_dim = embed_dim
+        self.score_mapping = str(score_mapping).lower()
+        if self.score_mapping not in {'born', 'learned_complex_mlp'}:
+            raise ValueError('unsupported projection score mapping: ' + str(score_mapping))
+        if self.score_mapping == 'learned_complex_mlp':
+            # A shared, non-negative real-valued map g(Re(z), Im(z)).  This is
+            # an explicit alternative to the Born-rule score |z|^2 while
+            # retaining the same learned directions and temporal pooling.
+            self.score_mapper = torch.nn.Sequential(
+                torch.nn.Linear(2, int(score_hidden)), torch.nn.ReLU(),
+                torch.nn.Linear(int(score_hidden), 1), torch.nn.Softplus(),
+            )
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         if ortho_init:
             self.kernel = torch.nn.Parameter(torch.stack([torch.eye(embed_dim).to(device),torch.zeros(embed_dim, embed_dim).to(device)],dim = -1))
@@ -21,7 +32,7 @@ class ComplexMeasurement2(torch.nn.Module):
             self.kernel = torch.nn.Parameter(normalized_tensor)
 
 
-    def forward(self, inputs, measure_operator=None):
+    def forward(self, inputs, measure_operator=None, pooling='weighted'):
         
         input_real = inputs[0]
         input_imag = inputs[1]
@@ -39,11 +50,24 @@ class ComplexMeasurement2(torch.nn.Module):
         imag_kernel = imag_kernel.unsqueeze(-1)
         results = []
         for r_k, i_k in zip(real_kernel,imag_kernel):
-            mul_real = (torch.matmul(input_real, r_k)+ torch.matmul(input_imag, i_k))**2
-            mul_imag = (torch.matmul(input_imag, r_k)- torch.matmul(input_real, i_k))**2
+            projection_real = torch.matmul(input_real, r_k) + torch.matmul(input_imag, i_k)
+            projection_imag = torch.matmul(input_imag, r_k) - torch.matmul(input_real, i_k)
 #            result = torch.matmul(weights.transpose(1,2), mul_real+mul_imag).squeeze()
-
-            result = torch.matmul(weights.transpose(-1,-2), mul_real+mul_imag).squeeze()
+            if self.score_mapping == 'born':
+                scores = projection_real.square() + projection_imag.square()
+            else:
+                scores = self.score_mapper(torch.cat([projection_real, projection_imag], dim=-1))
+            if pooling == 'max':
+                result = scores.max(dim=1).values.squeeze(-1)
+            elif pooling == 'mean':
+                result = scores.mean(dim=1).squeeze(-1)
+            elif pooling in {'weighted', 'attention'}:
+                # ``attention`` uses the model's learned temporal weights,
+                # normalized along time for a valid weighted pooling rule.
+                normalized_weights = torch.softmax(weights, dim=1) if pooling == 'attention' else weights
+                result = torch.matmul(normalized_weights.transpose(-1,-2), scores).squeeze()
+            else:
+                raise ValueError('unsupported projection pooling: ' + str(pooling))
             results.append(result)
         results = torch.stack(results,dim = -1)
         return(results)

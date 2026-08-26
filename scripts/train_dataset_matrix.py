@@ -162,11 +162,18 @@ def train_matrix(
             run_index += 1
             key = f"{dataset}/{model_name}"
             result_path = dataset_dir / f"{model_name}.csv"
-            if resume and result_path.exists():
+            prediction_path = dataset_dir / f"{model_name}.predictions.npz"
+            if resume and result_path.exists() and prediction_path.exists():
                 print(f"[{run_index}/{total}] SKIP completed {key}", flush=True)
                 state["runs"][key] = {"status": "completed", "result": str(result_path)}
                 save_state(state, result_dir, state_path)
                 continue
+            if resume and result_path.exists() and not prediction_path.exists():
+                print(
+                    f"[{run_index}/{total}] RERUN {key}: result CSV exists but "
+                    "the required prediction artifact is missing",
+                    flush=True,
+                )
             config_path = make_config(
                 dataset, model_name, config_dir, run_name, epochs, seed,
             )

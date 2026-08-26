@@ -29,6 +29,7 @@ from .M3SA import M3SA
 from .ALMT import ALMT
 from .QMF import QMF
 from .QRSAN import QRSAN, QRSANNoResidual, QSAN
+from .QRSANVariants import RealQRSAN, RealImagConcatMLP
 def setup(opt):
     
     print("network type: " + opt.network_type)
@@ -74,6 +75,10 @@ def setup(opt):
         model = QSAN(opt)
     elif opt.network_type == 'qrsan-no-residual':
         model = QRSANNoResidual(opt)
+    elif opt.network_type == 'real-qrsan':
+        model = RealQRSAN(opt)
+    elif opt.network_type == 'real-imag-concat-mlp':
+        model = RealImagConcatMLP(opt)
     elif opt.network_type == 'quantum-multimodal-transformer':
         model = uMULT(opt)
     elif opt.network_type == 'local_mixture_attention':

@@ -33,6 +33,11 @@ def run(params):
         print('Training the model!')
         train(params, model)
         model = torch.load(params.best_model_file, weights_only=False)
+        if 'retain_model_file' in params.__dict__ and params.retain_model_file:
+            retain_dir = os.path.dirname(params.retain_model_file)
+            if retain_dir:
+                os.makedirs(retain_dir, exist_ok=True)
+            torch.save(model, params.retain_model_file)
         os.remove(params.best_model_file)
         if ('training_checkpoint_file' in params.__dict__ and
                 os.path.exists(params.training_checkpoint_file)):

@@ -135,6 +135,18 @@ class uQDNN_ATTENTION(torch.nn.Module):
         # Figure 6 ablation: retain the attention path, but optionally remove
         # its Q residual connection before quantum measurement.
         self.residual_self_attention = getattr(opt, 'residual_self_attention', True)
+        # Controlled Experiment 1 switches.  Defaults preserve the published
+        # QRSAN path; every switch changes one named component only.
+        self.complex_encoding = getattr(opt, 'complex_encoding', True)
+        self.learned_phase = getattr(opt, 'learned_phase', True)
+        self.mixture_weighting = getattr(opt, 'mixture_weighting', True)
+        self.tfn_expansion = getattr(opt, 'tfn_expansion', True)
+        self.self_attention = getattr(opt, 'self_attention', True)
+        self.projection_pooling = getattr(opt, 'projection_pooling', 'weighted')
+        self.projection_score_mapping = getattr(opt, 'projection_score_mapping', 'born')
+        self.projection_score_hidden = int(getattr(opt, 'projection_score_hidden', 8))
+        self.classifier_head = getattr(opt, 'classifier_head', 'mlp')
+        self.readout_mode = getattr(opt, 'readout_mode', 'measurement')
 
         self.modality_weights = nn.Parameter(torch.zeros(len(self.input_dims)))
 
@@ -174,10 +186,31 @@ class uQDNN_ATTENTION(torch.nn.Module):
         self.measurement_dim = 1
         for dim in self.contracted_dims:
             self.measurement_dim = self.measurement_dim * dim
+        self.register_buffer('basis_permutation', torch.arange(self.measurement_dim))
 
-        self.measurement = ComplexMeasurement2(self.measurement_dim, units=self.num_measurements, device=self.device)
+        # ``tfn_expansion=False`` replaces the explicit tensor product by a
+        # learned, dimension-preserving projection of concatenated modalities.
+        # The projection keeps the downstream attention and measurement shape
+        # fixed, so this ablation isolates the interaction expansion.
+        concatenated_dim = sum(self.contracted_dims)
+        self.no_tfn_real = nn.Linear(concatenated_dim, self.measurement_dim)
+        self.no_tfn_imag = nn.Linear(concatenated_dim, self.measurement_dim)
 
-        if self.output_dim == 1:
+        self.measurement = ComplexMeasurement2(
+            self.measurement_dim, units=self.num_measurements, device=self.device,
+            score_mapping=self.projection_score_mapping, score_hidden=self.projection_score_hidden,
+        )
+        if self.readout_mode == 'real_imag_concat_mlp':
+            for parameter in self.measurement.parameters():
+                parameter.requires_grad = False
+            self.concat_fc_out = nn.Sequential(
+                nn.Dropout(self.output_dropout_rate), nn.Linear(2 * self.measurement_dim, self.output_cell_dim), nn.ReLU(),
+                nn.Linear(self.output_cell_dim, self.output_cell_dim), nn.ReLU(), nn.Linear(self.output_cell_dim, self.output_dim),
+            )
+
+        if self.classifier_head == 'linear':
+            self.fc_out = nn.Linear(self.num_measurements, self.output_dim)
+        elif self.output_dim == 1:
             self.fc_out = nn.Sequential(nn.Dropout(self.output_dropout_rate),
                                         nn.Linear(self.num_measurements, self.output_cell_dim),
                                         nn.ReLU(),
@@ -194,6 +227,15 @@ class uQDNN_ATTENTION(torch.nn.Module):
 
         self.real_softmax = nn.Softmax(dim=2)
         self.imag_softmax = nn.Softmax(dim=2)
+
+    def set_basis_permutation(self, permutation=None):
+        """Set an interaction-coordinate permutation for sensitivity tests."""
+        if permutation is None:
+            permutation = torch.arange(self.measurement_dim, device=self.basis_permutation.device)
+        permutation = torch.as_tensor(permutation, device=self.basis_permutation.device, dtype=torch.long)
+        if permutation.ndim != 1 or permutation.numel() != self.measurement_dim or not torch.equal(torch.sort(permutation).values, torch.arange(self.measurement_dim, device=permutation.device)):
+            raise ValueError('basis permutation must contain each interaction coordinate exactly once')
+        self.basis_permutation.copy_(permutation)
 
 
     def forward(self,in_modalities):
@@ -220,17 +262,21 @@ class uQDNN_ATTENTION(torch.nn.Module):
         hidden_units_imag = []
 
         for i in range(len(self.input_dims)):
-            phases = self.phase_embed[i](word_indexes)
             amplitudes = self.proj_layers[i](in_modalities[i])
             norms = self.l2_norm(amplitudes)
             amplitudes = self.l2_normalization(amplitudes)
             weights.append(self.activation(norms))
-
-            [seq_embedding_real,seq_embedding_imag] = self.complex_multiply([phases,amplitudes])
+            if not self.complex_encoding:
+                seq_embedding_real = amplitudes
+                seq_embedding_imag = torch.zeros_like(amplitudes)
+            else:
+                phases = self.phase_embed[i](word_indexes) if self.learned_phase else torch.zeros_like(amplitudes)
+                [seq_embedding_real,seq_embedding_imag] = self.complex_multiply([phases,amplitudes])
             hidden_units_real.append(seq_embedding_real)
             hidden_units_imag.append(seq_embedding_imag)
 
-        modality_weights = nn.Softmax(dim=-1)(self.modality_weights)
+        modality_weights = nn.Softmax(dim=-1)(self.modality_weights) if self.mixture_weighting else \
+            torch.full_like(self.modality_weights, 1.0 / len(self.input_dims))
         weight = torch.zeros_like(weights[0])
 
         for w,modality_weights in zip(weights,modality_weights):
@@ -241,25 +287,28 @@ class uQDNN_ATTENTION(torch.nn.Module):
 
 
         for i in range(seq_len):
-            tensor_product_real = torch.ones(batch_size,1).to(self.device)
-            tensor_product_imag = torch.ones(batch_size,1).to(self.device)
-
-            for h_real,h_imag in zip(hidden_units_real,hidden_units_imag):
-                h_added_real = h_real[:,i,:]
-                h_added_imag = h_imag[:,i,:]
-
-                result_real = torch.bmm(tensor_product_real.unsqueeze(2), h_added_real.unsqueeze(1)) - torch.bmm(
-                    tensor_product_imag.unsqueeze(2), h_added_imag.unsqueeze(1))
-                result_imag = torch.bmm(tensor_product_real.unsqueeze(2), h_added_imag.unsqueeze(1)) + torch.bmm(
-                    tensor_product_imag.unsqueeze(2), h_added_real.unsqueeze(1))
-                tensor_product_real = result_real.view(batch_size,-1)
-                tensor_product_imag = result_imag.view(batch_size,-1)
-
+            if self.tfn_expansion:
+                tensor_product_real = torch.ones(batch_size,1).to(self.device)
+                tensor_product_imag = torch.ones(batch_size,1).to(self.device)
+                for h_real,h_imag in zip(hidden_units_real,hidden_units_imag):
+                    h_added_real = h_real[:,i,:]
+                    h_added_imag = h_imag[:,i,:]
+                    result_real = torch.bmm(tensor_product_real.unsqueeze(2), h_added_real.unsqueeze(1)) - torch.bmm(
+                        tensor_product_imag.unsqueeze(2), h_added_imag.unsqueeze(1))
+                    result_imag = torch.bmm(tensor_product_real.unsqueeze(2), h_added_imag.unsqueeze(1)) + torch.bmm(
+                        tensor_product_imag.unsqueeze(2), h_added_real.unsqueeze(1))
+                    tensor_product_real = result_real.view(batch_size,-1)
+                    tensor_product_imag = result_imag.view(batch_size,-1)
+            else:
+                tensor_product_real = self.no_tfn_real(torch.cat([unit[:,i,:] for unit in hidden_units_real], dim=-1))
+                tensor_product_imag = self.no_tfn_imag(torch.cat([unit[:,i,:] for unit in hidden_units_imag], dim=-1))
             real_tensors.append(tensor_product_real)
             imag_tensors.append(tensor_product_imag)
 
         real_tensors = torch.stack(real_tensors,dim=1)
         imag_tensors = torch.stack(imag_tensors,dim=1)
+        real_tensors = real_tensors.index_select(2, self.basis_permutation)
+        imag_tensors = imag_tensors.index_select(2, self.basis_permutation)
 
         # 添加quantum self-Attention机制
         Q_tensors_real = real_tensors
@@ -284,18 +333,27 @@ class uQDNN_ATTENTION(torch.nn.Module):
 
 
 
-        atten_real = self.real_softmax(U_tensors_real)
-        atten_imag = self.imag_softmax(U_tensors_imag)
-
-        atten_real_tensors = torch.bmm(atten_real,V_tensors_real) - torch.bmm(atten_imag,V_tensors_imag)
-        atten_imag_tensors = torch.bmm(atten_imag,V_tensors_real) + torch.bmm(atten_real,V_tensors_imag)
+        if self.self_attention:
+            atten_real = self.real_softmax(U_tensors_real)
+            atten_imag = self.imag_softmax(U_tensors_imag)
+            atten_real_tensors = torch.bmm(atten_real,V_tensors_real) - torch.bmm(atten_imag,V_tensors_imag)
+            atten_imag_tensors = torch.bmm(atten_imag,V_tensors_real) + torch.bmm(atten_real,V_tensors_imag)
+        else:
+            atten_real_tensors, atten_imag_tensors = V_tensors_real, V_tensors_imag
 
         if self.residual_self_attention:
             atten_real_tensors += Q_tensors_real
             atten_imag_tensors += Q_tensors_imag
 
-        output = self.measurement([atten_real_tensors,atten_imag_tensors,weight])
-        output = self.fc_out(output)
+        if self.readout_mode == 'real_imag_concat_mlp':
+            representation = torch.cat([atten_real_tensors, atten_imag_tensors], dim=-1)
+            output = self.concat_fc_out((weight * representation).sum(dim=1))
+        else:
+            output = self.measurement(
+                [atten_real_tensors,atten_imag_tensors,weight],
+                pooling=self.projection_pooling,
+            )
+            output = self.fc_out(output)
 
         return output
 

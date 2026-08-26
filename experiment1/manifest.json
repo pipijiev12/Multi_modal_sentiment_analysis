@@ -1,0 +1,33 @@
+{
+  "seeds": [77, 78, 79, 80, 81],
+  "datasets": ["cmumosei", "cmumosi", "iemocap"],
+  "base_config": "config/reproduction/qrsan.ini",
+  "experiments": {
+    "main": ["qrsan"],
+    "ablation_available": [
+      {"name": "full_qrsan", "network_type": "qrsan"},
+      {"name": "no_complex_encoding", "network_type": "qrsan", "overrides": {"complex_encoding": false}},
+      {"name": "no_learned_phase", "network_type": "qrsan", "overrides": {"learned_phase": false}},
+      {"name": "no_mixture_weighting", "network_type": "qrsan", "overrides": {"mixture_weighting": false}},
+      {"name": "no_tfn_expansion", "network_type": "qrsan", "overrides": {"tfn_expansion": false}},
+      {"name": "no_attention", "network_type": "qrsan", "overrides": {"self_attention": false}},
+      {"name": "no_residual", "network_type": "qrsan", "overrides": {"residual_self_attention": false}}
+      ,{"name": "real_imag_concat_mlp", "network_type": "real-imag-concat-mlp"}
+    ],
+    "projection_head": [
+      {"name": "max_pool_mlp", "network_type": "qrsan", "overrides": {"projection_pooling": "max", "classifier_head": "mlp"}},
+      {"name": "mean_pool_mlp", "network_type": "qrsan", "overrides": {"projection_pooling": "mean", "classifier_head": "mlp"}},
+      {"name": "attention_pool_mlp", "network_type": "qrsan", "overrides": {"projection_pooling": "attention", "classifier_head": "mlp"}},
+      {"name": "weighted_pool_linear", "network_type": "qrsan", "overrides": {"projection_pooling": "weighted", "classifier_head": "linear"}},
+      {"name": "weighted_pool_mlp", "network_type": "qrsan", "overrides": {"projection_pooling": "weighted", "classifier_head": "mlp"}}
+    ],
+    "projection_mapping": [
+      {"name": "born_score_mlp", "network_type": "qrsan", "overrides": {"projection_pooling": "weighted", "classifier_head": "mlp", "projection_score_mapping": "born"}},
+      {"name": "learned_complex_score_mlp", "network_type": "qrsan", "overrides": {"projection_pooling": "weighted", "classifier_head": "mlp", "projection_score_mapping": "learned_complex_mlp", "projection_score_hidden": 8}}
+    ],
+    "basis_sensitivity": ["qrsan"],
+    "efficiency": ["qrsan", "tfn", "lmf", "qmf", "mult"]
+  },
+  "required_but_not_implemented": [],
+  "notes": "Only identifiers registered in models/__init__.py may be launched. Required variants without an implementation are reported as blocked rather than silently substituted."
+}

@@ -234,10 +234,43 @@ flowchart TD
 
 - `acc`：按正负极性划分的二分类准确率；
 - `binary_f1`：二分类加权 F1；
+- `balanced_accuracy`：负类召回率与正类召回率的平均值；
+- `macro_f1`：正、负两类 F1 的非加权平均值；
+- `majority_baseline_*`：训练集多数类分类器在同一测试样本上的准确率、balanced accuracy 和 macro-F1；
 - `accuracy_5`：裁剪到 `[-2, 2]` 后的五分类准确率；
 - `accuracy_7`：七分类准确率；
 - `MAE`：平均绝对误差；
 - `r`：预测值与真实值的 Pearson 相关系数。
+
+为检验准确率不受类别不平衡的误导，矩阵实验会同时保存
+`*.predictions.npz`。完成五个种子后，统一脚本使用
+`scripts/report_class_imbalance_robustness.py` 对相同测试样本生成三个数据集的
+Section 4.3 表格，包含模型、训练集多数类和均匀随机基线。CMU-MOSEI 与 CMU-MOSI
+采用情感分数 `>= 0` 的二分类；IEMOCAP 对四个情绪标签分别计算后宏平均。报告输出每次
+评估指标、均值±标准差、Markdown 表格和可审计元数据；多数类始终由训练集标签确定。
+
+Linux 服务器使用一个 Bash 入口完成 Section 4.3 的全部实验。默认会补跑 30 个
+匹配模型/数据集组合，然后生成三个数据集的类别不平衡基线表、配对统计比较表和填充真实
+数值的正文及回复审稿人文本。默认使用 GPU 0 和 GPU 1 并行执行不同随机种子，且每张卡同时运行两个任务；
+可通过 `--gpus` 和 `--tasks-per-gpu` 修改 GPU 列表和每卡并发数：
+
+```bash
+bash scripts/run_section_4_3_experiments_linux.sh \
+  --gpus 0,1 --tasks-per-gpu 2 --conda-env multimodal-sa --table-label S4
+```
+
+如已保存五个匹配种子的预测文件，可跳过训练，仅重新生成报告：
+
+```bash
+bash scripts/run_section_4_3_experiments_linux.sh \
+  --analyze-only --conda-env multimodal-sa --table-label S4
+```
+
+该脚本默认使用 `CMU-MOSEI=ALMT`、`CMU-MOSI=MEGAKANs`、`IEMOCAP=EF-LSTM` 作为
+预先指定的比较对象。运行前请根据已确定的主指标和复现结果核对这一映射，必要时通过
+`--comparators cmumosei=model,cmumosi=model,iemocap=model` 显式替换。统计输出包含
+配对逐种子结果、95% CI、置换检验 p 值、全表 Holm 校正、配对 Cohen's \(d_z\)，以及由
+真实结果填充的 Section 4.3 与回复审稿人文本。
 
 对于 `emotion` 任务，评估结果包括整体准确率，以及每个情绪类别的准确率和加权 F1。
 
