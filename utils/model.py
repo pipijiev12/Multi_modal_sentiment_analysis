@@ -66,7 +66,17 @@ def train(params, model):
 
     start_epoch = 0
     best_val_loss = 99999.0
-    if os.path.exists(training_checkpoint_file):
+    if os.path.exists(training_checkpoint_file) and not os.path.exists(params.best_model_file):
+        # A checkpoint can survive an interrupted run after the final epoch
+        # while its separately serialized validation-best model is absent.
+        # Resuming at ``epochs`` would then skip training and make run.py fail
+        # when it loads ``*.best``.  Restart this individual job so its model
+        # selection is reproducible rather than silently testing a last-epoch
+        # checkpoint that was never selected on validation data.
+        print('Checkpoint exists without a best model; restarting this job from epoch 0: {}'.format(
+            training_checkpoint_file,
+        ))
+    elif os.path.exists(training_checkpoint_file):
         checkpoint = torch.load(training_checkpoint_file, weights_only=False)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
