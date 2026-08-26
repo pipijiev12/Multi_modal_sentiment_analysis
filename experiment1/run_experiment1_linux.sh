@@ -3,17 +3,18 @@
 # seed/dataset/model level so --tasks-per-gpu is a real per-GPU concurrency cap.
 set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHON_BIN="${PYTHON_BIN:-python3}"; CONDA_ENV=""; GPUS="0,1"; TASKS=1; ANALYZE_ONLY=0; EPOCHS=""; FRESH=0
+PYTHON_BIN="${PYTHON_BIN:-python3}"; CONDA_ENV=""; GPUS="0,1"; TASKS=1; ANALYZE_ONLY=0; EPOCHS=""; FRESH=0; OUTPUT_ROOT="eval/experiment1"
 usage(){ cat <<'EOF'
-Usage: bash experiment1/run_experiment1_linux.sh [--conda-env ENV] [--gpus 0,1] [--tasks-per-gpu N] [--epochs N] [--fresh] [--analyze-only]
+Usage: bash experiment1/run_experiment1_linux.sh [--conda-env ENV] [--gpus 0,1] [--tasks-per-gpu N] [--epochs N] [--output-root DIR] [--fresh] [--analyze-only]
 EOF
 }
-while (($#)); do case "$1" in --conda-env) CONDA_ENV="$2"; shift 2;; --gpus) GPUS="$2"; shift 2;; --tasks-per-gpu) TASKS="$2"; shift 2;; --epochs) EPOCHS="$2"; shift 2;; --fresh) FRESH=1; shift;; --analyze-only) ANALYZE_ONLY=1; shift;; -h|--help) usage; exit 0;; *) echo "Unknown option: $1" >&2; exit 2;; esac; done
+while (($#)); do case "$1" in --conda-env) CONDA_ENV="$2"; shift 2;; --gpus) GPUS="$2"; shift 2;; --tasks-per-gpu) TASKS="$2"; shift 2;; --epochs) EPOCHS="$2"; shift 2;; --output-root) OUTPUT_ROOT="$2"; shift 2;; --fresh) FRESH=1; shift;; --analyze-only) ANALYZE_ONLY=1; shift;; -h|--help) usage; exit 0;; *) echo "Unknown option: $1" >&2; exit 2;; esac; done
 if [[ -n "$CONDA_ENV" ]]; then RUNNER=(conda run --no-capture-output -n "$CONDA_ENV" "$PYTHON_BIN"); else RUNNER=("$PYTHON_BIN"); fi
 cd "$ROOT"; IFS=',' read -r -a GPU_LIST <<< "$GPUS"
+[[ "$OUTPUT_ROOT" != /* && "$OUTPUT_ROOT" != *".."* ]] || { echo "ERROR: --output-root must be a relative repository path" >&2; exit 2; }
 run_job(){
   local suite="$1" seed="$2" dataset="$3" model="$4" gpu="$5"
-  local command=("${RUNNER[@]}" experiment1/run_experiment1.py --suite "$suite" --seeds "$seed" --datasets "$dataset" --models "$model")
+  local command=("${RUNNER[@]}" experiment1/run_experiment1.py --suite "$suite" --seeds "$seed" --datasets "$dataset" --models "$model" --output-root "$OUTPUT_ROOT")
   [[ -z "$EPOCHS" ]] || command+=(--epochs "$EPOCHS")
   ((FRESH == 0)) || command+=(--no-resume)
   CUDA_VISIBLE_DEVICES="$gpu" "${command[@]}"
@@ -32,7 +33,7 @@ if (( ! ANALYZE_ONLY )); then
     while IFS=$'\t' read -r seed dataset model; do
       printf '%s\t%s\t%s\t%s\n' "$suite" "$seed" "$dataset" "$model" > "$queue_dir/job_$(printf '%06d' "$job_number")"
       ((job_number+=1))
-    done < <("${RUNNER[@]}" experiment1/run_experiment1.py --suite "$suite" --list-jobs)
+    done < <("${RUNNER[@]}" experiment1/run_experiment1.py --suite "$suite" --list-jobs --output-root "$OUTPUT_ROOT")
   done
   printf 'Queued %s Experiment 1 jobs across %s worker(s) (%s task(s) per GPU).\n' "$job_number" "$worker_slots" "$TASKS"
   run_worker(){
@@ -72,24 +73,24 @@ if (( ! ANALYZE_ONLY )); then
   done
   failed=0; for pid in "${pids[@]}"; do wait "$pid" || failed=1; done
   if [[ -s "$queue_dir/failed_jobs.tsv" ]]; then
-    cp "$queue_dir/failed_jobs.tsv" eval/experiment1/failed_jobs.tsv
-    echo "Experiment training completed with failed jobs; inspect eval/experiment1/failed_jobs.tsv and the matching run.log files." >&2
+    cp "$queue_dir/failed_jobs.tsv" "$OUTPUT_ROOT/failed_jobs.tsv"
+    echo "Experiment training completed with failed jobs; inspect $OUTPUT_ROOT/failed_jobs.tsv and the matching run.log files." >&2
     failed=1
   fi
-  ((failed==0)) || { echo "Experiment training failed; inspect eval/experiment1/*/*/*/*/run.log" >&2; exit 1; }
+  ((failed==0)) || { echo "Experiment training failed; inspect $OUTPUT_ROOT/*/*/*/*/run.log" >&2; exit 1; }
   mapfile -t benchmark_configs < <(find experiment1/generated/efficiency/seed_77 -name '*.ini' -type f | sort)
   if ((${#benchmark_configs[@]})); then
-    "${RUNNER[@]}" experiment1/benchmark_models.py --configs "${benchmark_configs[@]}" --output eval/experiment1/benchmarks/efficiency_seed77.csv
+    "${RUNNER[@]}" experiment1/benchmark_models.py --configs "${benchmark_configs[@]}" --output "$OUTPUT_ROOT/benchmarks/efficiency_seed77.csv"
   fi
   for dataset in cmumosei cmumosi iemocap; do
     config="experiment1/generated/main/seed_77/${dataset}/qrsan.ini"
-    model_file="eval/experiment1/main/seed_77/${dataset}/qrsan/best_model.pt"
+    model_file="$OUTPUT_ROOT/main/seed_77/${dataset}/qrsan/best_model.pt"
     if [[ -f "$config" && -f "$model_file" ]]; then
-      "${RUNNER[@]}" experiment1/basis_permutation_sensitivity.py --config "$config" --model-file "$model_file" --output-dir "eval/experiment1/basis_sensitivity/${dataset}/seed_77" --permutations 10
+      "${RUNNER[@]}" experiment1/basis_permutation_sensitivity.py --config "$config" --model-file "$model_file" --output-dir "$OUTPUT_ROOT/basis_sensitivity/${dataset}/seed_77" --permutations 10
     fi
   done
 fi
-"${RUNNER[@]}" experiment1/audit_predictions.py --input-root eval --output-dir eval/experiment1/audits/predictions
-"${RUNNER[@]}" experiment1/iemocap_split_audit.py --dataset-pickle data/cmumosi_cmumosei_iemocap_mult/iemocap_data.pkl --output-dir eval/experiment1/audits/iemocap
-"${RUNNER[@]}" experiment1/collect_reproducibility.py --config-root experiment1/generated --output-dir eval/experiment1/audits/reproducibility
+"${RUNNER[@]}" experiment1/audit_predictions.py --input-root eval --output-dir "$OUTPUT_ROOT/audits/predictions"
+"${RUNNER[@]}" experiment1/iemocap_split_audit.py --dataset-pickle data/cmumosi_cmumosei_iemocap_mult/iemocap_data.pkl --output-dir "$OUTPUT_ROOT/audits/iemocap"
+"${RUNNER[@]}" experiment1/collect_reproducibility.py --config-root experiment1/generated --output-dir "$OUTPUT_ROOT/audits/reproducibility"
 echo "Completed Experiment 1. Review eval/experiment1/audits and blocked_variants.json before manuscript claims."
