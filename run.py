@@ -38,6 +38,13 @@ def write_reproducibility_metadata(params, model, train_seconds, test_seconds):
     batches = int(test_profile.get('batches', 0))
     examples = int(test_profile.get('examples', 0))
     forward_seconds = float(test_profile.get('forward_seconds', 0.0))
+    cpu_model = platform.processor() or platform.uname().processor
+    if not cpu_model and os.path.isfile('/proc/cpuinfo'):
+        with open('/proc/cpuinfo', encoding='utf-8') as stream:
+            for line in stream:
+                if line.lower().startswith('model name'):
+                    cpu_model = line.split(':', 1)[1].strip()
+                    break
     metadata = {
         'config_file': str(getattr(params, 'config_file', '')),
         'dataset': params.dataset_name,
@@ -57,7 +64,7 @@ def write_reproducibility_metadata(params, model, train_seconds, test_seconds):
         'test_inference_batch_ms': 1000 * forward_seconds / batches if batches else None,
         'test_inference_example_ms': 1000 * forward_seconds / examples if examples else None,
         'peak_gpu_memory_mib': peak_gpu_mib,
-        'hardware': {'cpu': platform.processor() or platform.uname().processor, 'gpu': gpu},
+        'hardware': {'cpu_model': cpu_model or 'unknown', 'logical_cpu_cores': os.cpu_count(), 'gpu': gpu},
         'software': {'python': sys.version, 'pytorch': torch.__version__, 'platform': platform.platform()},
     }
     metadata_path = os.path.join(output_dir, 'reproducibility.json')
