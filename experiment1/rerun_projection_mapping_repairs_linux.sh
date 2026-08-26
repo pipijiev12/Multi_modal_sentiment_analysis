@@ -7,13 +7,15 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 CONDA_ENV="multimodal-sa"
 GPUS="0,1,2,3"
+TASKS_PER_GPU=2
 
 usage() {
   cat <<'EOF'
-Usage: bash experiment1/rerun_projection_mapping_repairs_linux.sh [--conda-env ENV] [--gpus 0,1,2,3]
+Usage: bash experiment1/rerun_projection_mapping_repairs_linux.sh [--conda-env ENV] [--gpus 0,1,2,3] [--tasks-per-gpu N]
 
-Re-runs exactly seven projection_mapping jobs with --no-resume.  It does not
-touch any other Experiment 1 result.  Logs are written to
+Re-runs exactly seven projection_mapping jobs with --no-resume. The default is
+two jobs per GPU, so all seven jobs fit in one batch on four GPUs. It does not
+touch any other Experiment 1 result. Logs are written to
 eval/experiment1/projection_mapping/repair_*.log.
 EOF
 }
@@ -22,6 +24,7 @@ while (($#)); do
   case "$1" in
     --conda-env) CONDA_ENV="$2"; shift 2 ;;
     --gpus) GPUS="$2"; shift 2 ;;
+    --tasks-per-gpu) TASKS_PER_GPU="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
@@ -30,6 +33,7 @@ done
 cd "$ROOT"
 IFS=',' read -r -a GPU_LIST <<< "$GPUS"
 ((${#GPU_LIST[@]} >= 1)) || { echo "ERROR: provide at least one GPU ID" >&2; exit 2; }
+[[ "$TASKS_PER_GPU" =~ ^[1-9][0-9]*$ ]] || { echo "ERROR: --tasks-per-gpu must be a positive integer" >&2; exit 2; }
 
 if ! grep -q 'Checkpoint exists without a best model' utils/model.py; then
   echo "ERROR: utils/model.py lacks the incomplete-checkpoint recovery fix; sync commit 5d57c34 first." >&2
@@ -74,11 +78,14 @@ jobs=(
 )
 
 overall_failed=0
-for ((offset=0; offset<${#jobs[@]}; offset+=${#GPU_LIST[@]})); do
+batch_capacity=$((${#GPU_LIST[@]} * TASKS_PER_GPU))
+printf 'Launching %s repair jobs across GPU(s) %s (%s task(s) per GPU).\n' \
+  "${#jobs[@]}" "$GPUS" "$TASKS_PER_GPU"
+for ((offset=0; offset<${#jobs[@]}; offset+=batch_capacity)); do
   pids=()
-  for ((slot=0; slot<${#GPU_LIST[@]} && offset+slot<${#jobs[@]}; slot++)); do
+  for ((slot=0; slot<batch_capacity && offset+slot<${#jobs[@]}; slot++)); do
     read -r seed dataset model <<< "${jobs[$((offset+slot))]}"
-    run_one "${GPU_LIST[$slot]}" "$seed" "$dataset" "$model" &
+    run_one "${GPU_LIST[$((slot % ${#GPU_LIST[@]}))]}" "$seed" "$dataset" "$model" &
     pids+=("$!")
   done
   wait_batch "${pids[@]}" || overall_failed=1
