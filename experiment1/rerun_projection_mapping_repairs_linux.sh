@@ -8,10 +8,11 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 CONDA_ENV="multimodal-sa"
 GPUS="0,1,2,3"
 TASKS_PER_GPU=2
+OUTPUT_ROOT="eval/experiment1"
 
 usage() {
   cat <<'EOF'
-Usage: bash experiment1/rerun_projection_mapping_repairs_linux.sh [--conda-env ENV] [--gpus 0,1,2,3] [--tasks-per-gpu N]
+Usage: bash experiment1/rerun_projection_mapping_repairs_linux.sh [--conda-env ENV] [--gpus 0,1,2,3] [--tasks-per-gpu N] [--output-root DIR]
 
 Re-runs exactly seven projection_mapping jobs with --no-resume. The default is
 two jobs per GPU, so all seven jobs fit in one batch on four GPUs. It does not
@@ -25,6 +26,7 @@ while (($#)); do
     --conda-env) CONDA_ENV="$2"; shift 2 ;;
     --gpus) GPUS="$2"; shift 2 ;;
     --tasks-per-gpu) TASKS_PER_GPU="$2"; shift 2 ;;
+    --output-root) OUTPUT_ROOT="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
@@ -46,7 +48,8 @@ if pgrep -af 'run.py -config .*experiment1/generated' >/dev/null; then
 fi
 
 RUNNER=(conda run --no-capture-output -n "$CONDA_ENV" "$PYTHON_BIN")
-LOG_DIR="eval/experiment1/projection_mapping"
+[[ "$OUTPUT_ROOT" != /* && "$OUTPUT_ROOT" != *".."* ]] || { echo "ERROR: --output-root must be a relative repository path" >&2; exit 2; }
+LOG_DIR="$OUTPUT_ROOT/projection_mapping"
 mkdir -p "$LOG_DIR"
 
 run_one() {
@@ -54,7 +57,7 @@ run_one() {
   local log_file="$LOG_DIR/repair_seed${seed}_${dataset}_${model}.log"
   printf 'RUN GPU=%s seed=%s dataset=%s model=%s\n' "$gpu" "$seed" "$dataset" "$model" | tee "$log_file"
   CUDA_VISIBLE_DEVICES="$gpu" "${RUNNER[@]}" experiment1/run_experiment1.py \
-    --suite projection_mapping --seeds "$seed" --datasets "$dataset" --models "$model" --no-resume \
+    --suite projection_mapping --seeds "$seed" --datasets "$dataset" --models "$model" --output-root "$OUTPUT_ROOT" --no-resume \
     >> "$log_file" 2>&1
 }
 

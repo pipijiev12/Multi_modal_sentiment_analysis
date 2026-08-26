@@ -56,6 +56,7 @@ def main() -> int:
     parser.add_argument("--seeds", nargs="+", type=int)
     parser.add_argument("--models", nargs="+", help="Variant names to run (defaults to every variant in the suite).")
     parser.add_argument("--epochs", type=int)
+    parser.add_argument("--output-root", default="eval/experiment1", help="Relative directory for suite outputs.")
     parser.add_argument("--no-resume", action="store_true")
     parser.add_argument("--list-jobs", action="store_true", help="Print valid jobs as tab-separated seed, dataset, model rows and exit.")
     parser.add_argument("--dry-run", action="store_true")
@@ -74,7 +75,10 @@ def main() -> int:
             parser.error("unknown model(s) for %s: %s" % (args.suite, ", ".join(unknown)))
         specs = [spec for spec in specs if spec["name"] in requested]
     unavailable = sorted({spec["network_type"] for spec in specs} - allowed)
-    output_root = ROOT / "eval" / "experiment1" / args.suite
+    relative_output_root = Path(args.output_root)
+    if relative_output_root.is_absolute() or ".." in relative_output_root.parts:
+        parser.error("--output-root must be a relative path inside the repository")
+    output_root = ROOT / relative_output_root / args.suite
     output_root.mkdir(parents=True, exist_ok=True)
     (output_root / "blocked_variants.json").write_text(json.dumps({
         "suite": args.suite, "unavailable": unavailable,
