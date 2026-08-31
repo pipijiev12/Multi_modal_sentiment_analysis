@@ -80,7 +80,7 @@ if (( ! ANALYZE_ONLY )); then
   ((failed==0)) || { echo "Experiment training failed; inspect $OUTPUT_ROOT/*/*/*/*/run.log" >&2; exit 1; }
   mapfile -t benchmark_configs < <(find experiment1/generated/efficiency/seed_77 -name '*.ini' -type f | sort)
   if ((${#benchmark_configs[@]})); then
-    "${RUNNER[@]}" experiment1/benchmark_models.py --configs "${benchmark_configs[@]}" --output "$OUTPUT_ROOT/benchmarks/efficiency_seed77.csv"
+    "${RUNNER[@]}" experiment1/benchmark_models.py --configs "${benchmark_configs[@]}" --require-same-batch --output "$OUTPUT_ROOT/benchmarks/efficiency_seed77.csv"
   fi
   for dataset in cmumosei cmumosi iemocap; do
     config="experiment1/generated/main/seed_77/${dataset}/qrsan.ini"

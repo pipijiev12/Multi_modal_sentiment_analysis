@@ -16,6 +16,22 @@ bash experiment1/run_experiment1_linux.sh --analyze-only --conda-env multimodal-
 
 The full run additionally writes `eval/experiment1/benchmarks/efficiency_seed77.csv` and ten fixed-model basis permutations per dataset under `eval/experiment1/basis_sensitivity/`. The benchmark records parameter count, training-step time, inference latency and peak allocated GPU memory after warm-up.
 
+To run only the efficiency and basis-sensitivity supplements (without repeating
+the other ablations), first ensure that the seed-77 main QRSAN checkpoints are
+available, then run:
+
+```bash
+bash experiment1/run_efficiency_and_basis_linux.sh \
+  --conda-env multimodal-sa --gpus 0,1,2,3 --tasks-per-gpu 1 \
+  --output-root eval1/experiment1
+```
+
+This runs QRSAN, TFN, LMF, QMF and MulT under the same per-dataset benchmark
+policy. It writes one CSV per dataset under `benchmarks/`, captures the machine
+snapshot under `audits/hardware/`, and performs ten random interaction-basis
+permutations on each fixed QRSAN checkpoint. The benchmark aborts if models for
+the same dataset have inconsistent batch sizes.
+
 Create IEMOCAP leave-one-session-out manifests only from real source metadata:
 
 ```bash

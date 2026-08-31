@@ -12,10 +12,35 @@ import json
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 HERE = Path(__file__).resolve().parent
+
+
+def timestamp() -> str:
+    """ISO-8601 UTC timestamp used for grep-friendly, server-independent logs."""
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def run_with_timestamped_log(command: list[str], cwd: Path, log_path: Path) -> int:
+    """Stream a child process into a durable log with a timestamp per line."""
+    with log_path.open("w", encoding="utf-8", buffering=1) as log:
+        log.write(f"[{timestamp()}] RUN {' '.join(command)}\n")
+        process = subprocess.Popen(
+            command, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1,
+        )
+        assert process.stdout is not None
+        for line in process.stdout:
+            # tqdm uses carriage returns; normalize them so the saved log
+            # remains one timestamped record per rendered progress update.
+            for record in line.replace("\r", "\n").splitlines():
+                log.write(f"[{timestamp()}] {record}\n")
+        return_code = process.wait()
+        log.write(f"[{timestamp()}] FINISHED return_code={return_code}\n")
+    return return_code
 
 
 def load_manifest() -> dict:
@@ -113,11 +138,11 @@ def main() -> int:
                 if args.dry_run:
                     continue
                 run_dir.mkdir(parents=True, exist_ok=True)
+                started_at = timestamp()
                 started = time.perf_counter()
-                with (run_dir / "run.log").open("w", encoding="utf-8") as log:
-                    process = subprocess.run(command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, text=True)
-                (run_dir / "runtime.json").write_text(json.dumps({"wall_seconds": time.perf_counter() - started, "return_code": process.returncode}, indent=2) + "\n", encoding="utf-8")
-                if process.returncode:
+                return_code = run_with_timestamped_log(command, ROOT, run_dir / "run.log")
+                (run_dir / "runtime.json").write_text(json.dumps({"started_at_utc": started_at, "finished_at_utc": timestamp(), "wall_seconds": time.perf_counter() - started, "return_code": return_code}, indent=2) + "\n", encoding="utf-8")
+                if return_code:
                     failures.append(f"seed_{seed}/{dataset}/{model}")
     if failures:
         print("FAILED: " + ", ".join(failures), file=sys.stderr)
